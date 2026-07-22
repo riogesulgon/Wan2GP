@@ -13566,6 +13566,13 @@ if __name__ == "__main__":
         else:
             url = "http://" + server_name
         webbrowser.open(url + ":" + str(server_port), new = 0, autoraise = True)
+    # Fix 307 redirects to internal IPs when behind RunPod's reverse proxy.
+    # ProxyHeadersMiddleware makes Gradio trust X-Forwarded-Host/Proto headers,
+    # so it constructs correct external redirect URLs instead of using the
+    # internal RunPod IP from the Host header.
+    from starlette.middleware.proxyheaders import ProxyHeadersMiddleware
+    demo.app.add_middleware(ProxyHeadersMiddleware)
+
     demo.launch(
         favicon_path="favicon.png",
         server_name=server_name,
