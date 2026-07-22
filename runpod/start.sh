@@ -9,6 +9,16 @@ set -Eeuo pipefail
 : "${WAN2GP_LOG:=/workspace/wan2gp.log}"
 WAN2GP_DIR="${WAN2GP_DIR:-/opt/Wan2GP}"
 
+# Set GRADIO_ROOT_PATH to the RunPod proxy URL so Gradio constructs
+# correct redirect URLs (instead of redirecting to internal pod IPs).
+# RunPod provides RUNPOD_POD_ID; the proxy URL is https://{POD_ID}-{PORT}.proxy.runpod.net.
+if [ -n "${RUNPOD_POD_ID:-}" ]; then
+  export GRADIO_ROOT_PATH="https://${RUNPOD_POD_ID}-${WAN2GP_PORT}.proxy.runpod.net"
+  log "GRADIO_ROOT_PATH set to ${GRADIO_ROOT_PATH} (from RUNPOD_POD_ID)"
+else
+  log "WARN: RUNPOD_POD_ID not set; Gradio may redirect to internal IP"
+fi
+
 log(){ echo "[$(date -u +%H:%M:%S)] $*"; }
 
 # --- /workspace is a RunPod Network Volume (persists across pod stops) ---
