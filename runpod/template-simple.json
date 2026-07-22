@@ -1,0 +1,18 @@
+{
+  "name": "Wan2GP (riogesulgon fork) — simple (no image build)",
+  "imageName": "pytorch/pytorch:2.7.0-cuda12.8-cudnn9-devel",
+  "category": "NVIDIA",
+  "isServerless": false,
+  "isPublic": true,
+  "containerDiskInGb": 50,
+  "volumeInGb": 200,
+  "volumeMountPath": "/workspace",
+  "ports": ["7862/http"],
+  "dockerStartCmd": "if [ ! -d /workspace/Wan2GP/.git ]; then git clone --depth 1 https://github.com/riogesulgon/Wan2GP /workspace/Wan2GP; fi; exec bash /workspace/Wan2GP/runpod/bootstrap.sh",
+  "env": {
+    "WAN2GP_PORT": "7862",
+    "WAN2GP_BRANCH": "main",
+    "HF_HUB_ENABLE_HF_TRANSFER": "1"
+  },
+  "readme": "# Wan2GP (riogesulgon fork) — simple, no image build\n\nClone-and-run template for the riogesulgon/Wan2GP fork (deepbeepmeep/Wan2GP v12.34 + durable generation queue). Uses the public `pytorch/pytorch:2.7.0-cuda12.8-cudnn9-devel` base image — **no custom image build, no registry, no DinD**.\n\nOn pod start the start command clones the fork onto the persistent /workspace volume and runs `runpod/bootstrap.sh`, which installs torch 2.10+cu128 + requirements, then starts the Gradio UI on port 7862.\n\n## Durable queue\n\nThe pending queue is written to `/workspace/queue.zip` on every mutation and on SIGTERM, and auto-restores in a new browser session — so client disconnects, crashes, and RunPod pod stops no longer lose your queued jobs. Stop the pod, start it again, open a fresh browser tab → the queue autoloads.\n\n## First boot\n\n- pip install of torch + requirements takes ~10–15 min (one-time; pip cache lives on the volume so subsequent boots are fast).\n- First generation downloads the Wan 2.1 I2V 14B model to `/workspace/Wan2GP/ckpts` (one-time; persists on the volume).\n- SageAttention is NOT installed by default (Wan2GP falls back to flash/SDPA attention — works, slightly slower). To enable it later, run inside the pod:\n  `cd /workspace/Wan2GP && pip install --no-build-isolation git+https://github.com/thu-ml/SageAttention.git`\n  (the devel base image has nvcc, so it can compile for the pod's GPU).\n\n## Use\n\n- Open **Connect → HTTP [7862]** for the Gradio UI.\n- Use **Connect → Web Terminal** for shell access (no sshd needed).\n- Target: **Wan 2.1 I2V 14B**.\n\nSee the repo's `runpod/bootstrap.sh`, `QUEUE_PERSISTENCE_PLAN.md`, and `runpod/RUNBOOK.md`."
+}
