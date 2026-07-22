@@ -103,11 +103,17 @@ log "🚀 Starting Wan2GP on :$WAN2GP_PORT (--config /workspace for durable queu
 # the durable-queue _graceful_shutdown flush fires on RunPod pod stop.
 gosu user python3 wgp.py --listen --config /workspace --server-port "$WAN2GP_PORT" >>"$WAN2GP_LOG" 2>&1 &
 
-log "⌛ Waiting for UI ..."
+log "⌛ Waiting for UI on :${WAN2GP_PORT} (probing every 2s, up to 6 min) ..."
 for i in $(seq 1 180); do
-  if curl -fs "http://127.0.0.1:${WAN2GP_PORT}/" >/dev/null 2>&1; then
-    log "✅ Wan2GP UI READY on port ${WAN2GP_PORT}"
+  # Show what curl sees: HTTP status or connection refused
+  HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${WAN2GP_PORT}/" 2>/dev/null || true)
+  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "307" ]; then
+    log "✅ Wan2GP UI READY on port ${WAN2GP_PORT} (HTTP $HTTP_CODE)"
     break
+  fi
+  # Print a progress dot every 10 attempts (every ~20s)
+  if [ $((i % 10)) -eq 0 ]; then
+    log "   still waiting... ($i/180 attempts, last HTTP: ${HTTP_CODE:-connection refused})"
   fi
   sleep 2
 done
