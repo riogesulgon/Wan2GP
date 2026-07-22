@@ -29,7 +29,8 @@ ENV WAN2GP_DIR=/opt/Wan2GP \
 # aria2 (fast downloads), jq, openssh-server + rsync (rsync-over-SSH).
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
         tini gosu aria2 jq openssh-server rsync \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && pip install --no-cache-dir hf_transfer
 
 # Clone the fork into /opt/Wan2GP (baked into the image). Shallow clone for the
 # default (main); full clone + checkout for a pinned commit SHA (GitHub rejects
