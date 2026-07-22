@@ -7,6 +7,10 @@ hardening from community templates (ProbeAI's `wan2gp-template`).
 
 Target use case: **Wan 2.1 I2V 14B** on a single-user RunPod GPU pod.
 
+**Recommended GPUs**: RTX A5000 / A4500 (SM 8.6), RTX 4060 (SM 8.9).
+SageAttention kernels are compiled at build time for `8.6` and `8.9`; other
+Ampere+ GPUs (SM ≥ 8.0) run via the flash/SDPA fallback.
+
 ## What persists on the /workspace Network Volume
 
 | Artifact | Path | Why |
@@ -41,11 +45,11 @@ Wan 2.1 I2V 14B transformer downloads **once, ever**.
 ```bash
 # from the Wan2GP repo root
 # 1. deps image (torch/mmgp/SageAttention) — slow; rebuild only when deps change.
-#    CUDA_ARCHITECTURES covers every RunPod NVIDIA GPU with SM >= 8.0
-#    (A100/A30, A40/A5000/A6000/3090, 4090/L4/L40/Ada-pros, H100/H200,
-#    5090/B200/Blackwell). V100 (sm 7.0) runs via fallback.
+#    CUDA_ARCHITECTURES covers the target GPUs. The default includes
+#    8.6 (RTX A5000/A4500) and 8.9 (RTX 4060/Ada Lovelace). Other Ampere+
+#    GPUs (SM >= 8.0) run via the flash/SDPA fallback.
 docker build -t wan2gp-deps \
-  --build-arg CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0" -f Dockerfile .
+  --build-arg CUDA_ARCHITECTURES="8.6;8.9" -f Dockerfile .
 
 # 2. hardened RunPod image (deps + start.sh + pinned fork commit).
 #    Override WAN2GP_COMMIT when you rebuild after pushing new fork commits.
@@ -53,13 +57,14 @@ docker build -t wan2gp-runpod \
   --build-arg WAN2GP_COMMIT=main -f runpod/Dockerfile .
 
 # 3. push to ghcr.io (immutable tag recommended)
-docker tag wan2gp-runpod ghcr.io/riogesulgon/wan2gp:v1
-docker push ghcr.io/riogesulgon/wan2gp:v1
+docker tag wan2gp-runpod ghcr.io/riogesulgon/wan2gp:v3
+docker push ghcr.io/riogesulgon/wan2gp:v3
 ```
 
-> If the SageAttention build fails on `12.0` (Blackwell) with the pinned version,
-> drop it: `--build-arg CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0"`. RTX 5090/B200 still
-> run via the SDPA fallback.
+> For broader GPU coverage, add more arches:
+> `--build-arg CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0"` (all RunPod GPUs).
+> This increases build time and image size. Omit `12.0` if the SageAttention
+> build fails on Blackwell; those GPUs fall back to SDPA.
 
 ## Create the template on RunPod
 
@@ -70,7 +75,7 @@ import via the API (see `PUBLISH.md`) or recreate in the UI
 | UI field | Value |
 | --- | --- |
 | Template name | `Wan2GP (riogesulgon fork) — durable queue` |
-| Container image | `ghcr.io/riogesulgon/wan2gp:v1` |
+| Container image | `ghcr.io/riogesulgon/wan2gp:v3` |
 | Compute type | NVIDIA |
 | Container disk | 40 GB |
 | Volume disk size | 200 GB |
@@ -119,7 +124,9 @@ env changes.
 ## Caveats
 
 - **GPU ↔ image match**: SageAttention is compiled at build time for
-  `CUDA_ARCHITECTURES`. Deploy on a matching GPU, or rebuild with a different set.
+  `CUDA_ARCHITECTURES` (default `8.6;8.9` for RTX A5000/A4500 and RTX 4060).
+  Deploy on a matching GPU, or rebuild with a broader arch set.
+  Other Ampere+ GPUs (SM ≥ 8.0) work via the flash/SDPA fallback.
 - **Per-session queue**: the queue is per browser session. The durable store
   (`queue.zip`) is shared, so two simultaneous browser sessions against the same
   pod can both autoload the same pending tasks → duplicate generations. Fine for

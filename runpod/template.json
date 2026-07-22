@@ -1,6 +1,6 @@
 {
   "name": "Wan2GP (riogesulgon fork) — durable queue",
-  "imageName": "ghcr.io/riogesulgon/wan2gp:v1",
+  "imageName": "ghcr.io/riogesulgon/wan2gp:v3",
   "category": "NVIDIA",
   "isServerless": false,
   "isPublic": true,
