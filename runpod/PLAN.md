@@ -1,5 +1,10 @@
 # RunPod template hardening plan (Wan2GP fork — durable queue)
 
+> **Status: implemented** in `runpod/` (`Dockerfile`, `start.sh`, `restart.sh`,
+> `template.json`, `README.md`). JSON + bash validated. Build + RunPod deploy
+> + the §10 verification steps remain (need a GPU + RunPod account). Fork
+> published at https://github.com/riogesulgon/Wan2GP (commit 3646c7f).
+
 Goal: ship a hardened RunPod Pod template for the Wan2GP fork that (a) keeps the
 **durable generation queue** work, (b) adopts the proven hardening from existing
 community templates (notably ProbeAI's `ArpitKhurana-ai/wan2gp-template`), and
@@ -184,13 +189,15 @@ rsync -avzP -e "ssh -p <ext-port> -i <key>" root@<pod-public-ip>:/workspace/outp
 ## 7. Durable-queue preservation checklist
 
 - [x] `wgp.py` durable-queue changes are in the fork → baked into the image at the
-      pinned commit.
-- [ ] `tini -g` forwards SIGTERM → `_graceful_shutdown` flushes `queue.zip`
-      (verify: `kill -TERM <pid>` → `/workspace/queue.zip` present + valid).
-- [ ] `--config /workspace` → `queue.zip` at `/workspace/queue.zip` (volume).
-- [ ] Autoload on fresh session works after pod stop/start (Step 7 of
-      `QUEUE_PERSISTENCE_PLAN.md`).
-- [ ] `ckpts` symlink → Wan 2.1 I2V 14B weights persist on volume (download once).
+      pinned commit (`WAN2GP_COMMIT=3646c7f`).
+- [x] `tini -g` + `gosu` wired (`Dockerfile` ENTRYPOINT, `start.sh` launch) so
+      SIGTERM reaches `wgp.py` → `_graceful_shutdown` flushes `queue.zip`.
+      *(verify on a pod: `kill -TERM 1` → `/workspace/queue.zip` present + valid)*
+- [x] `--config /workspace` → `queue.zip` at `/workspace/queue.zip` (volume).
+- [x] Autoload on fresh session wired (`delete_autoqueue_file=False` in `wgp.py`).
+      *(verify: pod stop/start → new browser session autoloads)*
+- [x] `ckpts` symlink (`start.sh`) → Wan 2.1 I2V 14B weights persist on volume.
+- [x] rsync-over-SSH via `22/tcp` (`openssh-server` + `sshd` in `start.sh`).
 
 ---
 

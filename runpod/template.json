@@ -1,22 +1,17 @@
 {
-  "name": "Wan2GP (fork) — durable queue",
-  "imageName": "ghcr.io/REPLACE/wan2gp:latest",
+  "name": "Wan2GP (riogesulgon fork) — durable queue",
+  "imageName": "ghcr.io/riogesulgon/wan2gp:v1",
   "category": "NVIDIA",
   "isServerless": false,
-  "isPublic": false,
+  "isPublic": true,
   "containerDiskInGb": 40,
   "volumeInGb": 200,
   "volumeMountPath": "/workspace",
-  "ports": ["7860/http"],
+  "ports": ["7862/http", "22/tcp"],
   "env": {
-    "WAN2GP_REPO_URL": "https://github.com/REPLACE/YOUR-FORK.git",
-    "WAN2GP_BRANCH": "main",
-    "SERVER_PORT": "7860",
-    "HF_HOME": "/workspace/hf_cache",
-    "PYTHONUNBUFFERED": "1",
-    "TORCH_ALLOW_TF32_CUBLAS": "1",
-    "TORCH_ALLOW_TF32_CUDNN": "1",
-    "SDL_AUDIODRIVER": "dummy"
+    "WAN2GP_PORT": "7862",
+    "WAN2GP_COMMIT": "3646c7f",
+    "HF_HUB_ENABLE_HF_TRANSFER": "1"
   },
-  "readme": "# Wan2GP (fork) — durable generation queue\n\nWanGP with a durable generation queue: the pending queue is written to `queue.zip` on every mutation and on SIGTERM, and auto-restores in a new browser session. The template mounts a Network Volume at `/workspace` and runs with `--config /workspace`, so the queue, outputs, media cache, config and HF models all persist across pod stops/restarts.\n\nOpen port `7860/http` for the Gradio UI. First boot clones the fork into `/workspace`; later boots pull updates. See the repo's `QUEUE_PERSISTENCE_PLAN.md` and `runpod/README.md`."
+  "readme": "# Wan2GP (riogesulgon fork) — durable generation queue\n\nFork of deepbeepmeep/Wan2GP (v12.34) with a durable generation queue: the pending queue is written to `queue.zip` on every mutation and on SIGTERM, and auto-restores in a new browser session — so client disconnects, crashes, and RunPod pod stops no longer lose your queued jobs.\n\nTarget: **Wan 2.1 I2V 14B**. Models auto-download on first generation and persist on the /workspace volume.\n\n## Hardening\n\n- `tini -g` PID 1 + `gosu` → SIGTERM reaches wgp.py → queue.zip flushes on pod stop.\n- Persistent /workspace Network Volume holds `queue.zip`, `wgp_config.json`, `outputs/`, `ckpts/` (model weights), HF cache, torchinductor cache.\n- 16 GB swap (best-effort), `PYTORCH_CUDA_ALLOC_CONF`, `HF_HUB_ENABLE_HF_TRANSFER`, NVENC ffmpeg, single-worker Gradio.\n- Baked pinned fork commit (reproducible).\n\n## Ports\n\n- `7862/http` → Gradio UI (RunPod proxy URL).\n- `22/tcp` → SSH for rsync-over-SSH + pod admin (read the external port from Connect → Direct TCP Ports). Add your SSH public key via the `SSH_PUBLIC_KEY` env, or rely on RunPod's account-key auto-injection.\n\n## rsync\n\n```bash\nrsync -avzP -e \"ssh -p <ext-port> -i <key>\" ./ckpts/ root@<pod-public-ip>:/workspace/ckpts/\nrsync -avzP -e \"ssh -p <ext-port> -i <key>\" root@<pod-public-ip>:/workspace/outputs/ ./outputs/\n```\n\n## Durable-queue test\n\nEnqueue jobs → Stop the pod (RunPod sends SIGTERM) → `queue.zip` is flushed → Start again → the queue autoloads in the new browser session.\n\nSee the repo's `QUEUE_PERSISTENCE_PLAN.md`, `runpod/README.md`, and `runpod/PUBLISH.md` for details."
 }
