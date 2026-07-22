@@ -1,0 +1,22 @@
+{
+  "name": "Wan2GP (fork) — durable queue",
+  "imageName": "ghcr.io/REPLACE/wan2gp:latest",
+  "category": "NVIDIA",
+  "isServerless": false,
+  "isPublic": false,
+  "containerDiskInGb": 40,
+  "volumeInGb": 200,
+  "volumeMountPath": "/workspace",
+  "ports": ["7860/http"],
+  "env": {
+    "WAN2GP_REPO_URL": "https://github.com/REPLACE/YOUR-FORK.git",
+    "WAN2GP_BRANCH": "main",
+    "SERVER_PORT": "7860",
+    "HF_HOME": "/workspace/hf_cache",
+    "PYTHONUNBUFFERED": "1",
+    "TORCH_ALLOW_TF32_CUBLAS": "1",
+    "TORCH_ALLOW_TF32_CUDNN": "1",
+    "SDL_AUDIODRIVER": "dummy"
+  },
+  "readme": "# Wan2GP (fork) — durable generation queue\n\nWanGP with a durable generation queue: the pending queue is written to `queue.zip` on every mutation and on SIGTERM, and auto-restores in a new browser session. The template mounts a Network Volume at `/workspace` and runs with `--config /workspace`, so the queue, outputs, media cache, config and HF models all persist across pod stops/restarts.\n\nOpen port `7860/http` for the Gradio UI. First boot clones the fork into `/workspace`; later boots pull updates. See the repo's `QUEUE_PERSISTENCE_PLAN.md` and `runpod/README.md`."
+}

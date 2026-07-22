@@ -26,7 +26,7 @@ WanGP is a one-stop super app for the best open source generative models across 
 - **Many quantized checkpoint formats**: use int8, fp8, gguf, NV FP4, and Nunchaku.
 - **Architecture-aware downloads**: automatically fetch the model files suited to your hardware.
 - **Finetunes**: add your own finetunes / checkpoints or the ones you found on Hugging Face or CivitAI
-- **Generation queue**: line up videos, images, and audio jobs, then come back later.
+- **Generation queue**: line up videos, images, and audio jobs, then come back later. The pending queue is persisted across client disconnects, process crashes, and pod stops, and auto-restores when you reopen the app (see the *Latest Updates* note below).
 - **Headless mode**: launch batches from the command line for images, videos, and audio.
 - **WanGP API**: add generative capabilities to your own apps.
 
@@ -60,6 +60,18 @@ WanGP is a one-stop super app for the best open source generative models across 
 
 
 ## 🔥 Latest Updates : 
+
+### Durable generation queue (fork change)
+
+This change adds a small, low-risk durability layer to the generation queue on top of upstream WanGP v12.34:
+
+- **Survives disconnects and crashes**: the pending queue is written to `queue.zip` on every queue mutation (enqueue, reorder, remove, abort, task completion, clear), not only on graceful shutdown. Writes are atomic (temp file + `os.replace`), so a crash mid-write can't corrupt the file a reconnect autoloads.
+- **Auto-restores in a new browser session**: opening the app in a fresh browser session autoloads the still-pending queue (tasks + media) via the existing `main.load` path, without re-running already-completed jobs (finished tasks are pruned from the queue as they complete).
+- **Handles pod stops**: a `SIGTERM`/`SIGHUP` handler flushes the queue before exit, so a RunPod pod stop (or any graceful termination signal) no longer loses pending work. `SIGKILL`/OOM-kills are covered by the per-mutation saves.
+- **Scope**: additive changes in `wgp.py` only; no new dependencies, no database, no schema. `queue.zip` remains both the durability store and the "Save Queue" download artifact. The upstream Windows-only asyncio connection patch (`shared/asyncio_utils.py`) is untouched.
+- **Design doc**: see [`QUEUE_PERSISTENCE_PLAN.md`](QUEUE_PERSISTENCE_PLAN.md) for the full rationale and step-by-step implementation.
+
+> Note: the queue is per-session. Concurrent browser sessions against the same `queue.zip` would each autoload the pending tasks (potential duplicate generations) — fine for single-user RunPod use, not intended for multi-client serving.
 
 ### 19th of July 2026: WanGP v12.34, you can breath now
 

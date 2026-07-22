@@ -1533,15 +1533,13 @@ def move_task(queue, old_index_str, new_index_str):
         old_idx += 1
         new_idx += 1
 
-        if not (0 < old_idx < len(queue)):
-            return update_queue_data(queue)
-
-        item_to_move = queue.pop(old_idx)
-        if old_idx < new_idx:
-            new_idx -= 1
-        clamped_new_idx = max(1, min(new_idx, len(queue)))
-        
-        queue.insert(clamped_new_idx, item_to_move)
+        if 0 < old_idx < len(queue):
+            item_to_move = queue.pop(old_idx)
+            if old_idx < new_idx:
+                new_idx -= 1
+            clamped_new_idx = max(1, min(new_idx, len(queue)))
+            
+            queue.insert(clamped_new_idx, item_to_move)
 
     return update_queue_data(queue)
 
@@ -1660,12 +1658,26 @@ def _save_queue_to_zip(queue, output):
             return False
 
         try:
-            with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as zf:
-                zf.write(manifest_path, arcname="queue.json")
-                for saved_file_rel_path in file_paths_in_zip.values():
-                    saved_file_abs_path = os.path.join(tmpdir, saved_file_rel_path)
-                    if os.path.exists(saved_file_abs_path):
-                        zf.write(saved_file_abs_path, arcname=saved_file_rel_path)
+            # Atomic write for on-disk targets: write to a temp file then os.replace
+            # (atomic on the same filesystem) so a crash mid-write cannot leave a
+            # truncated queue.zip that a reconnect autoload would consume.
+            # BytesIO (browser download) path is left unchanged.
+            if isinstance(output, (str, os.PathLike)):
+                tmp_output = f"{output}.tmp"
+                with zipfile.ZipFile(tmp_output, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    zf.write(manifest_path, arcname="queue.json")
+                    for saved_file_rel_path in file_paths_in_zip.values():
+                        saved_file_abs_path = os.path.join(tmpdir, saved_file_rel_path)
+                        if os.path.exists(saved_file_abs_path):
+                            zf.write(saved_file_abs_path, arcname=saved_file_rel_path)
+                os.replace(tmp_output, output)
+            else:
+                with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    zf.write(manifest_path, arcname="queue.json")
+                    for saved_file_rel_path in file_paths_in_zip.values():
+                        saved_file_abs_path = os.path.join(tmpdir, saved_file_rel_path)
+                        if os.path.exists(saved_file_abs_path):
+                            zf.write(saved_file_abs_path, arcname=saved_file_rel_path)
             return True
         except Exception as e:
             print(f"Error creating zip: {e}")
@@ -2044,7 +2056,7 @@ def load_queue_action(filepath, state, evt:gr.EventData):
         autoload_path = None
         if Path(AUTOSAVE_PATH).is_file():
             autoload_path = AUTOSAVE_PATH
-            delete_autoqueue_file = True
+            delete_autoqueue_file = False  # keep queue.zip as the persistent store (only Clear Queue deletes it)
         elif AUTOSAVE_TEMPLATE_PATH != AUTOSAVE_PATH and Path(AUTOSAVE_TEMPLATE_PATH).is_file():
             autoload_path = AUTOSAVE_TEMPLATE_PATH
         else:
@@ -2217,18 +2229,21 @@ def show_countdown_info_from_state(current_value: int):
         return current_value - 1
     return current_value
 quitting_app = False
-def autosave_queue():
+def autosave_queue(quiet=False):
     global quitting_app
     quitting_app = True
     global global_queue_ref
     if not global_queue_ref:
-        print("Autosave: Queue is empty, nothing to save.")
+        if not quiet:
+            print("Autosave: Queue is empty, nothing to save.")
         return
 
-    print(f"Autosaving queue ({len(global_queue_ref)} items) to {AUTOSAVE_PATH}...")
+    if not quiet:
+        print(f"Autosaving queue ({len(global_queue_ref)} items) to {AUTOSAVE_PATH}...")
     try:
         if _save_queue_to_zip(global_queue_ref, AUTOSAVE_PATH):
-            print(f"Queue autosaved successfully to {AUTOSAVE_PATH}")
+            if not quiet:
+                print(f"Queue autosaved successfully to {AUTOSAVE_PATH}")
         else:
             print("Autosave failed.")
     except Exception as e:
@@ -2380,6 +2395,7 @@ def generate_queue_html(queue):
 
 def update_queue_data(queue):
     update_global_queue_ref(queue)
+    autosave_queue(quiet=True)             # persist after every UI-driven mutation (enqueue/reorder/remove/clear/load)
     html_content = generate_queue_html(queue)
     return gr.HTML(value=html_content)
 
@@ -4211,6 +4227,7 @@ def resume_generation(state):
 def abort_generation(state, client_id="", notify = True):
     gen = get_gen_info(state)
     queue = gen.get("queue", [])
+    aborted = False
     with lock:
         if len(queue):
             if len(client_id):
@@ -4221,15 +4238,23 @@ def abort_generation(state, client_id="", notify = True):
                             if "in_progress" not in gen:
                                 del queue[0]
                                 if "prompt_no" in gen: gen["prompt_no"] += 1
-                                return gr.update(), gr.HTML(value=generate_queue_html(queue))
+                                aborted = True
                             break
                         del queue[i]
                         if "prompt_no" in gen: gen["prompt_no"] += 1
-                        return gr.update(), gr.HTML(value=generate_queue_html(queue))
+                        aborted = True
+                        break
             elif "in_progress" not in gen:
                 del queue[0]
                 gen["prompt_no"] += 1
-                return gr.update(), gr.HTML(value=generate_queue_html(queue))
+                aborted = True
+
+    if aborted:
+        # Persist outside the lock so we neither re-acquire `lock` (deadlock) nor
+        # hold it during file I/O. update_global_queue_ref takes `lock` itself.
+        update_global_queue_ref(queue)
+        autosave_queue(quiet=True)
+        return gr.update(), gr.HTML(value=generate_queue_html(queue))
 
     gen["resume"] = True
     if "in_progress" in gen: # and wan_model != None:
@@ -8206,6 +8231,7 @@ def process_tasks(state):
                 with lock:
                     queue[:] = [item for item in queue if item['id'] != task_id]
                 update_global_queue_ref(queue)
+                autosave_queue(quiet=True)          # persist queue.zip after a task completes (bypasses the HTML funnel)
                 
         except Exception as e:
             traceback.print_exc()
@@ -8239,6 +8265,7 @@ def process_tasks(state):
                 print(f"Error during autosave: {e}")
 
             update_global_queue_ref(queue)
+            autosave_queue(quiet=True)              # keep queue.zip in sync after a worker error/crash too
             gen["prompts_max"] = 0
             gen["prompt"] = ""
             gen["status_display"] =  False
@@ -13511,6 +13538,27 @@ if __name__ == "__main__":
         server_name = os.getenv("SERVER_NAME", "localhost")
     demo = create_ui()
     clear_startup_lock()
+
+    # Flush the pending queue to queue.zip on graceful termination signals so a
+    # RunPod pod stop (or any SIGTERM/SIGHUP) doesn't lose pending work.
+    # SIGKILL/OOM-kill can't be caught; per-mutation autosave covers those.
+    import signal
+    def _graceful_shutdown(signum, frame):
+        print(f"[shutdown] received signal {signum}; flushing queue...")
+        try:
+            autosave_queue()
+        except Exception as e:
+            print(f"[shutdown] autosave failed: {e}")
+        try:
+            clear_startup_lock()
+        except Exception:
+            pass
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+    signal.signal(signal.SIGTERM, _graceful_shutdown)
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, _graceful_shutdown)
+
     if args.open_browser:
         import webbrowser
         if server_name.startswith("http"):
