@@ -5,11 +5,14 @@ already published with the durable-queue code + `runpod/` template. This covers
 the remaining operational steps: build the image, publish the RunPod template,
 deploy, and verify the durable queue.
 
-> **Why a RunPod pod as the build host:** the image is a CUDA 12.8 devel base +
-> torch + SageAttention compiled for up to 5 SM architectures (~15–20 GB). That
-> needs Docker + ~80 GB free disk + ~16 GB RAM, and **no GPU** (the Dockerfile
-> patches SageAttention to use `CUDA_ARCH_LIST` without GPU detection). GitHub
-> Actions standard runners and a tight dev box can't fit it.
+> **Build-host requirements:** the image is a CUDA 12.8 devel base + torch +
+> SageAttention compiled for up to 5 SM architectures (~15–20 GB). That needs a
+> host with Docker (or buildah) + ~80 GB free disk + ~16 GB RAM, and **no GPU**
+> (the Dockerfile patches SageAttention to use `CUDA_ARCH_LIST` without GPU
+> detection). GitHub Actions standard runners and a tight dev box can't fit it.
+> See Phase B for the two working options (plain VM with Docker, or buildah on a
+> RunPod pod) — Docker-in-Docker is **not** one of them (RunPod pods aren't
+> privileged by default).
 
 ---
 
@@ -24,35 +27,72 @@ deploy, and verify the durable queue.
 
 ---
 
-## Phase B — build the image (on a RunPod pod, no CI)
+## Phase B — build the image (no GPU needed)
 
-**B1. Deploy a build pod.** RunPod console → **Deploy** → any pod template,
-**Container disk ≈ 100 GB**, volume = 0 (not needed for building), cheapest GPU
-(or CPU pod). The pod must run Docker — enable **Docker-in-Docker / privileged**,
-or use a base image that ships Docker.
+The image is a CUDA 12.8 devel base + torch + SageAttention compiled for up to
+5 SM architectures (~15–20 GB). That needs a build host with Docker (or buildah)
++ ~80 GB free disk + ~16 GB RAM, and **no GPU** (the Dockerfile patches
+SageAttention to use `CUDA_ARCH_LIST` without GPU detection). GitHub Actions
+standard runners and a tight dev box can't fit it.
 
-**B2. In the build pod, start Docker if needed and log in to ghcr:**
+> **Don't chase Docker-in-Docker on RunPod.** RunPod doesn't surface a DinD
+template, and standard on-demand GPU pods aren't privileged by default, so the
+Docker daemon can't run nested. Use one of the two options below instead.
+
+### Option 1 — a plain cloud VM with Docker (recommended, simplest)
+
+A normal VM isn't a container, so Docker runs natively and `runpod/build.sh`
+works as-is — no DinD, no privileged, no rootless quirks. For a one-time ~1 h
+build this is the path of least resistance.
+
+1. Spin up **Ubuntu 22.04/24.04** with **≥ 80 GB disk + ≥ 16 GB RAM** (no GPU).
+   Cheapest one-time options: Hetzner Cloud CX41 (~€0.05/h), DigitalOcean,
+   Contabo, or any box you already have. Hourly billing = pennies for one build.
+2. Install Docker: `curl -fsSL https://get.docker.com | sh`
+3. Log in to ghcr and build:
+   ```bash
+   echo "<PASTE_YOUR_PAT>" | docker login ghcr.io -u riogesulgon --password-stdin
+   git clone https://github.com/riogesulgon/Wan2GP && cd Wan2gp
+   CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0" WAN2GP_COMMIT=3646c7f \
+     IMAGE=ghcr.io/riogesulgon/wan2gp:v1 PUSH=1 bash runpod/build.sh
+   ```
+4. Tear the VM down. The image is on ghcr; RunPod pulls it at deploy time.
+
+### Option 2 — `buildah` on a RunPod pod (no privileged, no DinD)
+
+Stay inside RunPod: `buildah` builds images without a daemon and without
+privileges. Deploy any RunPod pod (PyTorch template is fine), **container disk
+200 GB** (rootless buildah's `vfs` driver duplicates layers), cheapest GPU (idle
+during build). Then:
+
 ```bash
-# apt-get update && apt-get install -y docker.io git   # if missing
-# dockerd > /tmp/dockerd.log 2>&1 &                    # start DinD daemon if needed
-echo "<PASTE_YOUR_PAT>" | docker login ghcr.io -u riogesulgon --password-stdin
-# expect: Login Succeeded
+apt-get update && apt-get install -y buildah git
+echo "<PASTE_YOUR_PAT>" | buildah login --username riogesulgon --password-stdin ghcr.io
+
+# stage 1 (deps) — MAX_JOBS=4 caps SageAttention parallelism to avoid OOM
+buildah bud --isolation chroot \
+  --build-arg CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0" --build-arg MAX_JOBS=4 \
+  -t wan2gp-deps -f Dockerfile .
+
+# stage 2 (hardened RunPod image) — finds wan2gp-deps in buildah's local storage
+buildah bud --isolation chroot --build-arg WAN2GP_COMMIT=3646c7f \
+  -t ghcr.io/riogesulgon/wan2gp:v1 -f runpod/Dockerfile .
+
+buildah push ghcr.io/riogesulgon/wan2gp:v1
 ```
 
-**B3. Clone the fork and build both stages + push:**
-```bash
-git clone https://github.com/riogesulgon/Wan2GP
-cd Wan2gp
+- `--isolation chroot` avoids needing a container runtime.
+- If `buildah info` shows `fuse-overlayfs` as the storage driver, 100 GB disk is
+  enough; otherwise `vfs` needs the 200 GB above.
+- This bypasses `runpod/build.sh` (which calls `docker build`); run the two
+  `buildah bud` commands by hand as shown.
 
-CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0" \
-WAN2GP_COMMIT=3646c7f \
-IMAGE=ghcr.io/riogesulgon/wan2gp:v1 \
-PUSH=1 bash runpod/build.sh
-```
-- **Landmarks:** stage 1 pulls `nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04`,
-  installs torch/mmgp, compiles SageAttention (slow, ~30–60 min). Stage 2 clones
-  the fork at `3646c7f`, adds hardening, tags `ghcr.io/riogesulgon/wan2gp:v1`,
-  pushes. Final lines: `The push refers to repository [ghcr.io/riogesulgon/wan2gp]` + digest.
+### Landmarks + troubleshooting (both options)
+
+- Stage 1 pulls `nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04`, installs
+  torch/mmgp, compiles SageAttention (slow, ~30–60 min). Stage 2 clones the fork
+  at `3646c7f`, adds hardening, tags `ghcr.io/riogesulgon/wan2gp:v1`, pushes.
+  Final lines: `The push refers to repository [ghcr.io/riogesulgon/wan2gp]` + digest.
 - If the SageAttention compile **OOMs** (`MAX_JOBS=8` default), rerun with
   `CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0"` (drop Blackwell `12.0`), or cap
   parallelism with `MAX_JOBS=4`.
