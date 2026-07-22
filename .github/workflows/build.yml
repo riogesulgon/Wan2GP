@@ -1,0 +1,94 @@
+name: build-runpod-image
+
+# Builds the hardened two-stage RunPod image and pushes it to ghcr.io.
+#
+# Triggers:
+#   - push tag "v*"      -> build at the tagged commit, push ghcr.io/<owner>/wan2gp:<tag>
+#   - workflow_dispatch -> manual build with custom arch/commit/tag inputs
+#
+# Runs on a self-hosted runner labelled `cuda-builder` (see runpod/CI.md for how
+# to set one up on a RunPod pod). GitHub-hosted standard runners are too small
+# for this CUDA devel + 5-arch SageAttention build, and larger hosted runners
+# need a paid plan.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      cuda_architectures:
+        description: "CUDA_ARCHITECTURES (semicolon-separated SM list)"
+        default: "8.0;8.6;8.9;9.0;12.0"
+      wan2gp_commit:
+        description: "Fork commit SHA or 'main' to bake"
+        default: "3646c7f"
+      image_tag:
+        description: "Image tag (e.g. v1, dev, test)"
+        required: true
+        default: "dev"
+      push_latest:
+        description: "Also tag and push :latest"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/wan2gp
+
+jobs:
+  build:
+    runs-on: [self-hosted, cuda-builder]
+    timeout-minutes: 120
+    steps:
+      - name: Checkout (provides Dockerfiles, scripts, requirements.txt as build context)
+        uses: actions/checkout@v4
+
+      - name: Resolve build parameters
+        id: p
+        run: |
+          set -eu
+          owner="${{ github.repository_owner }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # tag push: bake the tagged commit, tag the image with the git tag
+            tag="${GITHUB_REF##*/}"
+            arch="8.0;8.6;8.9;9.0;12.0"
+            commit="${GITHUB_SHA}"
+            latest="false"
+          else
+            tag="${{ inputs.image_tag }}"
+            arch="${{ inputs.cuda_architectures }}"
+            commit="${{ inputs.wan2gp_commit }}"
+            latest="${{ inputs.push_latest }}"
+          fi
+          {
+            echo "owner=$owner"
+            echo "tag=$tag"
+            echo "arch=$arch"
+            echo "commit=$commit"
+            echo "latest=$latest"
+            echo "image=$REGISTRY/$owner/wan2gp:$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ steps.p.outputs.owner }}" --password-stdin
+
+      - name: Build & push (${{ steps.p.outputs.image }})
+        env:
+          CUDA_ARCHITECTURES: ${{ steps.p.outputs.arch }}
+          WAN2GP_COMMIT: ${{ steps.p.outputs.commit }}
+          IMAGE: ${{ steps.p.outputs.image }}
+          PUSH: "1"
+        run: bash runpod/build.sh
+
+      - name: Also push :latest
+        if: steps.p.outputs.latest == 'true'
+        run: |
+          docker tag "${{ steps.p.outputs.image }}" "$REGISTRY/${{ steps.p.outputs.owner }}/wan2gp:latest"
+          docker push "$REGISTRY/${{ steps.p.outputs.owner }}/wan2gp:latest"
+
+      - name: Image digest
+        run: docker images --digests "$REGISTRY/${{ steps.p.outputs.owner }}/wan2gp" | tail -n +1
