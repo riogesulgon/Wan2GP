@@ -25,23 +25,41 @@ chown user:user /workspace /workspace/outputs /workspace/hf-home /workspace/hf-c
 # Persist model weights on the volume: symlink /opt/Wan2GP/ckpts -> /workspace/ckpts.
 # Wan2GP's files_locator resolves "ckpts" relative to cwd (/opt/Wan2GP), so this
 # makes the one-time ~15 GB Wan 2.1 I2V 14B download survive pod restarts.
+# Also symlink outputs -> /workspace/outputs so the default save_path="outputs"
+# persists even if wgp.py creates its own config with the relative path.
 if [ -e /opt/Wan2GP/ckpts ] && [ ! -L /opt/Wan2GP/ckpts ]; then
   log "WARN: /opt/Wan2GP/ckpts exists and is not a symlink; leaving as-is"
 else
   ln -sfn /workspace/ckpts /opt/Wan2GP/ckpts
 fi
+if [ -e /opt/Wan2GP/outputs ] && [ ! -L /opt/Wan2GP/outputs ]; then
+  log "WARN: /opt/Wan2GP/outputs exists and is not a symlink; leaving as-is"
+else
+  ln -sfn /workspace/outputs /opt/Wan2GP/outputs
+fi
 
 # Seed /workspace/wgp_config.json if absent so outputs land on the volume.
-# (Default save_path="outputs" is relative to /opt/Wan2GP, which is ephemeral.)
+# wgp.py requires many keys in this config (attention_mode, video_profile, etc.)
+# and crashes with KeyError if any are missing, so we seed a minimal-but-complete
+# set of the hard-required keys. wgp.py adds missing optional keys on first run.
 if [ ! -f /workspace/wgp_config.json ]; then
   cat > /workspace/wgp_config.json <<'JSON'
 {
+  "attention_mode": "auto",
   "save_path": "/workspace/outputs",
   "image_save_path": "/workspace/outputs",
-  "audio_save_path": "/workspace/outputs"
+  "audio_save_path": "/workspace/outputs",
+  "video_profile": 4,
+  "image_profile": 4,
+  "audio_profile": 3.5,
+  "multi_prompts_gen_type": "concat",
+  "checkpoints_paths": ["ckpts", "."],
+  "transformer_types": [],
+  "transformer_quantization": "int8",
+  "text_encoder_quantization": "int8"
 }
 JSON
-  log "Seeded /workspace/wgp_config.json (save_path=/workspace/outputs)"
+  log "Seeded /workspace/wgp_config.json (complete defaults)"
 fi
 chown user:user /workspace/wgp_config.json 2>/dev/null || true
 
