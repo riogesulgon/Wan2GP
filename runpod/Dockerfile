@@ -41,6 +41,10 @@ RUN if [ "${WAN2GP_COMMIT}" = "main" ]; then \
       cd "${WAN2GP_DIR}" && git checkout "${WAN2GP_COMMIT}"; \
     fi
 
+# /opt/Wan2GP is baked as root, but wgp.py runs as `user` (gosu) and creates
+# `settings/` (and other runtime files) in cwd — chown the repo so it can write.
+RUN chown -R user:user "${WAN2GP_DIR}"
+
 # SSH: key-only root login (drop-in). Host keys are generated at runtime by
 # start.sh and persisted on the /workspace volume (unique per pod, stable).
 RUN mkdir -p /run/sshd /root/.ssh && chmod 700 /root/.ssh && \
