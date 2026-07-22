@@ -1,6 +1,4 @@
 .*
-!.github/
-!.github/**
 *.py[cod]
 # *.jpg
 *.jpeg
