@@ -3,7 +3,7 @@
 > **Status: implemented** in `runpod/` (`Dockerfile`, `start.sh`, `restart.sh`,
 > `template.json`, `README.md`). JSON + bash validated. Build + RunPod deploy
 > + the §10 verification steps remain (need a GPU + RunPod account). Fork
-> published at https://github.com/riogesulgon/Wan2GP (commit 3646c7f).
+> published at https://github.com/riogesulgon/Wan2GP (main branch).
 
 Goal: ship a hardened RunPod Pod template for the Wan2GP fork that (a) keeps the
 **durable generation queue** work, (b) adopts the proven hardening from existing
@@ -189,7 +189,7 @@ rsync -avzP -e "ssh -p <ext-port> -i <key>" root@<pod-public-ip>:/workspace/outp
 ## 7. Durable-queue preservation checklist
 
 - [x] `wgp.py` durable-queue changes are in the fork → baked into the image at the
-      pinned commit (`WAN2GP_COMMIT=3646c7f`).
+      cloned commit (`WAN2GP_COMMIT`, default `main`).
 - [x] `tini -g` + `gosu` wired (`Dockerfile` ENTRYPOINT, `start.sh` launch) so
       SIGTERM reaches `wgp.py` → `_graceful_shutdown` flushes `queue.zip`.
       *(verify on a pod: `kill -TERM 1` → `/workspace/queue.zip` present + valid)*

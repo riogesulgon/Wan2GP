@@ -10,7 +10,7 @@
 # build is ~15-20 GB plus build cache).
 #
 # Usage:
-#   CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0" WAN2GP_COMMIT=3646c7f \
+#   CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0" WAN2GP_COMMIT=main \
 #     IMAGE=ghcr.io/riogesulgon/wan2gp:v1 PUSH=1 bash runpod/build.sh
 #
 # If the 5-arch build OOMs or is too slow, drop 12.0 (Blackwell) and rebuild:
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES:-8.0;8.6;8.9;9.0;12.0}"
-WAN2GP_COMMIT="${WAN2GP_COMMIT:-3646c7f}"
+WAN2GP_COMMIT="${WAN2GP_COMMIT:-main}"
 MAX_JOBS="${MAX_JOBS:-8}"
 IMAGE="${IMAGE:-ghcr.io/riogesulgon/wan2gp:v1}"
 PUSH="${PUSH:-0}"

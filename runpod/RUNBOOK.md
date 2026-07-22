@@ -53,7 +53,7 @@ build this is the path of least resistance.
    ```bash
    echo "<PASTE_YOUR_PAT>" | docker login ghcr.io -u riogesulgon --password-stdin
    git clone https://github.com/riogesulgon/Wan2GP && cd Wan2gp
-   CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0" WAN2GP_COMMIT=3646c7f \
+   CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0" WAN2GP_COMMIT=main \
      IMAGE=ghcr.io/riogesulgon/wan2gp:v1 PUSH=1 bash runpod/build.sh
    ```
 4. Tear the VM down. The image is on ghcr; RunPod pulls it at deploy time.
@@ -75,7 +75,7 @@ buildah bud --isolation chroot \
   -t wan2gp-deps -f Dockerfile .
 
 # stage 2 (hardened RunPod image) — finds wan2gp-deps in buildah's local storage
-buildah bud --isolation chroot --build-arg WAN2GP_COMMIT=3646c7f \
+buildah bud --isolation chroot --build-arg WAN2GP_COMMIT=main \
   -t ghcr.io/riogesulgon/wan2gp:v1 -f runpod/Dockerfile .
 
 buildah push ghcr.io/riogesulgon/wan2gp:v1
@@ -91,7 +91,7 @@ buildah push ghcr.io/riogesulgon/wan2gp:v1
 
 - Stage 1 pulls `nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04`, installs
   torch/mmgp, compiles SageAttention (slow, ~30–60 min). Stage 2 clones the fork
-  at `3646c7f`, adds hardening, tags `ghcr.io/riogesulgon/wan2gp:v1`, pushes.
+  at the cloned commit, adds hardening, tags `ghcr.io/riogesulgon/wan2gp:v1`, pushes.
   Final lines: `The push refers to repository [ghcr.io/riogesulgon/wan2gp]` + digest.
 - If the SageAttention compile **OOMs** (`MAX_JOBS=8` default), rerun with
   `CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0"` (drop Blackwell `12.0`), or cap

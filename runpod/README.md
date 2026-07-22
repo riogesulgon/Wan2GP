@@ -50,7 +50,7 @@ docker build -t wan2gp-deps \
 # 2. hardened RunPod image (deps + start.sh + pinned fork commit).
 #    Override WAN2GP_COMMIT when you rebuild after pushing new fork commits.
 docker build -t wan2gp-runpod \
-  --build-arg WAN2GP_COMMIT=3646c7f -f runpod/Dockerfile .
+  --build-arg WAN2GP_COMMIT=main -f runpod/Dockerfile .
 
 # 3. push to ghcr.io (immutable tag recommended)
 docker tag wan2gp-runpod ghcr.io/riogesulgon/wan2gp:v1
@@ -78,7 +78,7 @@ import via the API (see `PUBLISH.md`) or recreate in the UI
 | HTTP port | `7862` |
 | TCP port | `22` (SSH / rsync) |
 | Container start command | *(leave empty — image `ENTRYPOINT` is `tini -g --` → `/opt/start.sh`)* |
-| Env | `WAN2GP_PORT=7862`, `WAN2GP_COMMIT=3646c7f`, `HF_HUB_ENABLE_HF_TRANSFER=1` (+ optional `SSH_PUBLIC_KEY`) |
+| Env | `WAN2GP_PORT=7862`, `WAN2GP_COMMIT=main`, `HF_HUB_ENABLE_HF_TRANSFER=1` (+ optional `SSH_PUBLIC_KEY`) |
 | Visibility | Public |
 
 ## Deploy & connect

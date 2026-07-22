@@ -9,16 +9,18 @@
 #   1. docker build -t wan2gp-deps \
 #        --build-arg CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0" -f Dockerfile .
 #   2. docker build -t wan2gp-runpod \
-#        --build-arg WAN2GP_COMMIT=3646c7f -f runpod/Dockerfile .
+#        --build-arg WAN2GP_COMMIT=main -f runpod/Dockerfile .
 #   3. docker tag wan2gp-runpod ghcr.io/<your-user>/wan2gp:v1
 #      docker push ghcr.io/<your-user>/wan2gp:v1
 
 FROM wan2gp-deps
 
-# Pinned fork source. Override WAN2GP_COMMIT when rebuilding after new pushes.
-# Use "main" to track the branch tip (not reproducible).
+# Fork source. WAN2GP_COMMIT defaults to "main" (branch tip). To pin a specific
+# commit for reproducibility, pass --build-arg WAN2GP_COMMIT=<sha> — a full
+# clone + checkout is used so arbitrary SHAs resolve (shallow clones can't fetch
+# an arbitrary SHA from GitHub).
 ARG WAN2GP_REPO="https://github.com/riogesulgon/Wan2GP.git"
-ARG WAN2GP_COMMIT="3646c7f"
+ARG WAN2GP_COMMIT="main"
 
 ENV WAN2GP_DIR=/opt/Wan2GP \
     WAN2GP_PORT=7862
@@ -29,10 +31,15 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
         tini gosu aria2 jq openssh-server rsync \
  && rm -rf /var/lib/apt/lists/*
 
-# Clone the fork at the pinned commit into /opt/Wan2GP (baked into the image).
-RUN git clone --depth 1 "${WAN2GP_REPO}" "${WAN2GP_DIR}" && \
-    ( [ "${WAN2GP_COMMIT}" = "main" ] \
-      || ( cd "${WAN2GP_DIR}" && git fetch --depth 1 origin "${WAN2GP_COMMIT}" && git checkout "${WAN2GP_COMMIT}" ) )
+# Clone the fork into /opt/Wan2GP (baked into the image). Shallow clone for the
+# default (main); full clone + checkout for a pinned commit SHA (GitHub rejects
+# fetching an arbitrary SHA into a shallow clone — "couldn't find remote ref").
+RUN if [ "${WAN2GP_COMMIT}" = "main" ]; then \
+      git clone --depth 1 "${WAN2GP_REPO}" "${WAN2GP_DIR}"; \
+    else \
+      git clone "${WAN2GP_REPO}" "${WAN2GP_DIR}" && \
+      cd "${WAN2GP_DIR}" && git checkout "${WAN2GP_COMMIT}"; \
+    fi
 
 # SSH: key-only root login (drop-in). Host keys are generated at runtime by
 # start.sh and persisted on the /workspace volume (unique per pod, stable).

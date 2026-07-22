@@ -33,7 +33,7 @@ you want reproducible pods.
    | Start command | *(leave blank — the image CMD is `/opt/start.sh`)* |
    | Entrypoint | *(leave blank — the image ENTRYPOINT is `tini -g --`)* |
    | Registry credentials | none needed if the ghcr package is **Public**; add ghcr username + PAT if private |
-   | Env vars | `WAN2GP_PORT=7862`, `WAN2GP_COMMIT=3646c7f`, `HF_HUB_ENABLE_HF_TRANSFER=1` (optional `SSH_PUBLIC_KEY=ssh-ed25519 AAAA…`) |
+   | Env vars | `WAN2GP_PORT=7862`, `WAN2GP_COMMIT=main`, `HF_HUB_ENABLE_HF_TRANSFER=1` (optional `SSH_PUBLIC_KEY=ssh-ed25519 AAAA…`) |
    | Visibility | **Private** first → test → flip to **Public** to share |
 
    > The hardening env (`HF_HOME`, `PYTORCH_CUDA_ALLOC_CONF`, `GRADIO_*`, `MMGP_RESERVED_RAM_GB`, NVENC `WANGP_FFMPEG_*`, …) is already **baked into the image** via the Dockerfile `ENV` block — do **not** re-add them in the template. GPU type/count are chosen at **deploy** time, not in the template.
