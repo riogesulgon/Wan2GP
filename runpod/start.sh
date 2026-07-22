@@ -5,9 +5,16 @@
 # wgp.py's _graceful_shutdown handler can flush queue.zip on pod stop.
 set -Eeuo pipefail
 
+log(){ echo "[$(date -u +%H:%M:%S)] $*"; }
+
 : "${WAN2GP_PORT:=7862}"
 : "${WAN2GP_LOG:=/workspace/wan2gp.log}"
 WAN2GP_DIR="${WAN2GP_DIR:-/opt/Wan2GP}"
+
+# Register tini as a child subreaper when it isn't PID 1 (RunPod injects
+# its own init as PID 1). Without this, zombie reaping fails and SIGTERM
+# forwarding doesn't work for the durable-queue shutdown hook.
+export TINI_SUBREAPER=1
 
 # Set GRADIO_ROOT_PATH to the RunPod proxy URL so Gradio constructs
 # correct redirect URLs (instead of redirecting to internal pod IPs).
@@ -18,8 +25,6 @@ if [ -n "${RUNPOD_POD_ID:-}" ]; then
 else
   log "WARN: RUNPOD_POD_ID not set; Gradio may redirect to internal IP"
 fi
-
-log(){ echo "[$(date -u +%H:%M:%S)] $*"; }
 
 # --- /workspace is a RunPod Network Volume (persists across pod stops) ---
 # Mounts as root; give the unprivileged `user` (uid 1000) ownership of the dirs
