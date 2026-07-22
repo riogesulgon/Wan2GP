@@ -13570,7 +13570,7 @@ if __name__ == "__main__":
     # ProxyHeadersMiddleware makes Gradio trust X-Forwarded-Host/Proto headers,
     # so it constructs correct external redirect URLs instead of using the
     # internal RunPod IP from the Host header.
-    from starlette.middleware.proxyheaders import ProxyHeadersMiddleware
+    from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
     demo.app.add_middleware(ProxyHeadersMiddleware)
 
     demo.launch(
