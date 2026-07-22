@@ -13567,11 +13567,44 @@ if __name__ == "__main__":
             url = "http://" + server_name
         webbrowser.open(url + ":" + str(server_port), new = 0, autoraise = True)
     # Fix 307 redirects to internal IPs when behind RunPod's reverse proxy.
-    # ProxyHeadersMiddleware makes Gradio trust X-Forwarded-Host/Proto headers,
-    # so it constructs correct external redirect URLs instead of using the
-    # internal RunPod IP from the Host header.
-    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
-    demo.app.add_middleware(ProxyHeadersMiddleware)
+    # RunPod's proxy sends requests to the pod's internal IP, so Gradio's
+    # root-redirect (307) points to http://100.x.x.x:port// which is unreachable.
+    # This middleware intercepts such redirects and rewrites the Location header
+    # to use the original scheme://host from X-Forwarded-* or Host headers.
+    class _RunPodProxyFix:
+        """Rewrite 307/301 redirects that point to internal IPs."""
+        INTERNAL_IP_PREFIXES = ("10.", "100.", "127.", "172.16.", "172.17.", "172.18.", "172.19.", "172.2", "172.3", "192.168.")
+        def __init__(self, app):
+            self.app = app
+        async def __call__(self, scope, receive, send):
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+            import urllib.parse
+            headers_dict = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+            forwarded_host = headers_dict.get("x-forwarded-host", "")
+            forwarded_proto = headers_dict.get("x-forwarded-proto", "https")
+            if not forwarded_host:
+                forwarded_host = headers_dict.get("host", "")
+            async def send_wrapper(message):
+                if message.get("type") == "http.response.start":
+                    status = message.get("status", 200)
+                    if status in (301, 302, 303, 307, 308) and forwarded_host:
+                        new_headers = []
+                        for name, value in message.get("headers", []):
+                            if name == b"location":
+                                location = value.decode()
+                                is_internal = any(location.startswith(f"http://{p}") for p in self.INTERNAL_IP_PREFIXES)
+                                if is_internal:
+                                    parsed = urllib.parse.urlparse(location)
+                                    new_location = urllib.parse.urlunparse((forwarded_proto, forwarded_host, parsed.path, parsed.params, parsed.query, parsed.fragment))
+                                    value = new_location.encode()
+                            new_headers.append((name, value))
+                        message["headers"] = new_headers
+                await send(message)
+            await self.app(scope, receive, send_wrapper)
+
+    demo.app.add_middleware(_RunPodProxyFix)
 
     demo.launch(
         favicon_path="favicon.png",
