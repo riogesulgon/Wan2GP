@@ -45,7 +45,8 @@ RUN pip install -r requirements.txt
 # Install SageAttention from git (patch GPU detection)
 ENV TORCH_CUDA_ARCH_LIST="${CUDA_ARCHITECTURES}"
 ENV FORCE_CUDA="1"
-ENV MAX_JOBS="8"
+ARG MAX_JOBS="8"
+ENV MAX_JOBS="${MAX_JOBS}"
 
 COPY <<EOF /tmp/patch_setup.py
 import os

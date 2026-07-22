@@ -53,8 +53,9 @@ PUSH=1 bash runpod/build.sh
   installs torch/mmgp, compiles SageAttention (slow, ~30–60 min). Stage 2 clones
   the fork at `3646c7f`, adds hardening, tags `ghcr.io/riogesulgon/wan2gp:v1`,
   pushes. Final lines: `The push refers to repository [ghcr.io/riogesulgon/wan2gp]` + digest.
-- If the SageAttention compile **OOMs** (`MAX_JOBS=8` baked in), rerun with
-  `CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0"` (drop Blackwell `12.0`).
+- If the SageAttention compile **OOMs** (`MAX_JOBS=8` default), rerun with
+  `CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0"` (drop Blackwell `12.0`), or cap
+  parallelism with `MAX_JOBS=4`.
 
 **B4. Verify on ghcr:** https://github.com/riogesulgon?tab=packages → a `wan2gp`
 package with the `v1` tag. You can now stop/delete the build pod.

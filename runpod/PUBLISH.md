@@ -19,19 +19,24 @@ you want reproducible pods.
 
 1. Go to **console.runpod.io → Templates → New Template**.
 2. Fill the form:
+
    | UI field | Value |
    | --- | --- |
-   | Template name | `Wan2GP (fork) — durable queue` |
-   | Container image | `ghcr.io/<your-user>/wan2gp:v1` |
+   | Template name | `Wan2GP (riogesulgon fork) — durable queue` |
+   | Container image | `ghcr.io/riogesulgon/wan2gp:v1` |
    | Compute type | NVIDIA |
    | Container disk | 40 GB |
-   | Volume disk size | 200 GB (fit your models + outputs) |
+   | Volume disk size | 200 GB (holds models + outputs + queue) |
    | Volume mount path | `/workspace` |
-   | HTTP port | `7860` |
-   | Container start command | *(leave empty — the image `ENTRYPOINT` is `/start.sh`)* |
-   | Registry credentials | add if your image is in a private registry |
-   | Env vars | `WAN2GP_REPO_URL`, `WAN2GP_BRANCH=main`, `HF_HOME=/workspace/hf_cache`, … (as in `template.json`) |
-   | Visibility | Private (default) or Public to share |
+   | Expose HTTP port(s) | `7862` |
+   | Expose TCP port(s) | `22` (SSH / rsync-over-SSH) |
+   | Start command | *(leave blank — the image CMD is `/opt/start.sh`)* |
+   | Entrypoint | *(leave blank — the image ENTRYPOINT is `tini -g --`)* |
+   | Registry credentials | none needed if the ghcr package is **Public**; add ghcr username + PAT if private |
+   | Env vars | `WAN2GP_PORT=7862`, `WAN2GP_COMMIT=3646c7f`, `HF_HUB_ENABLE_HF_TRANSFER=1` (optional `SSH_PUBLIC_KEY=ssh-ed25519 AAAA…`) |
+   | Visibility | **Private** first → test → flip to **Public** to share |
+
+   > The hardening env (`HF_HOME`, `PYTORCH_CUDA_ALLOC_CONF`, `GRADIO_*`, `MMGP_RESERVED_RAM_GB`, NVENC `WANGP_FFMPEG_*`, …) is already **baked into the image** via the Dockerfile `ENV` block — do **not** re-add them in the template. GPU type/count are chosen at **deploy** time, not in the template.
 3. **Save Template** (private by default).
 4. **Deploy a Pod from it** to test before making it Public.
 5. To publish publicly: flip **Visibility → Public** in the template's settings
@@ -70,7 +75,7 @@ Key fields and their types:
 | `containerDiskInGb` | integer | Ephemeral container disk (wiped on restart). |
 | `volumeInGb` | integer | Persistent network volume size. |
 | `volumeMountPath` | string | Where the volume mounts, e.g. `/workspace`. |
-| `ports` | string[] | e.g. `["7860/http"]` (or `/tcp`). |
+| `ports` | string[] | e.g. `["7862/http", "22/tcp"]` (or `/tcp`). |
 | `env` | object | A `{KEY: value}` map (not an array). |
 | `dockerStartCmd` | string[] | Overrides image **CMD**. Omit to use the image's. |
 | `dockerEntrypoint` | string[] | Overrides image **ENTRYPOINT**. Omit to use the image's. |
@@ -83,12 +88,14 @@ Key fields and their types:
 
 ## After publishing — verify the persistence story
 
-1. Deploy a pod from the template. First boot clones your fork into `/workspace`
-   (a few seconds); subsequent boots `git pull` or launch in place.
-2. Open the `7860/http` port → Gradio UI.
-3. Enqueue a few jobs, then **stop the pod** (RunPod sends SIGTERM). The
-   durable-queue code flushes `queue.zip` on the SIGTERM handler and on every
-   queue mutation, so `/workspace/queue.zip` is current.
+1. Deploy a pod from the template. The fork is **baked into `/opt/Wan2GP`** in
+   the image (pinned commit) — boot is instant, no clone at runtime. `/workspace`
+   (the network volume) holds `queue.zip`, `wgp_config.json`, `outputs/`,
+   `ckpts/` (model weights), and HF/torchinductor caches.
+2. Open the `7862/http` port → Gradio UI.
+3. Enqueue a few jobs, then **stop the pod** (RunPod sends SIGTERM). `tini -g` +
+   `gosu` forward SIGTERM to `wgp.py` → `_graceful_shutdown` flushes `queue.zip`;
+   per-mutation autosave also keeps it current.
 4. **Start the pod again** → the queue autoloads automatically into the new
    session (tasks + media), without re-running already-completed jobs.
 

@@ -15,19 +15,23 @@
 #
 # If the 5-arch build OOMs or is too slow, drop 12.0 (Blackwell) and rebuild:
 #   CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0" bash runpod/build.sh
+# Or cap the SageAttention parallelism to avoid OOM on a low-RAM build host:
+#   MAX_JOBS=4 CUDA_ARCHITECTURES="8.0;8.6;8.9;9.0;12.0" bash runpod/build.sh
 set -euo pipefail
 
 CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES:-8.0;8.6;8.9;9.0;12.0}"
 WAN2GP_COMMIT="${WAN2GP_COMMIT:-3646c7f}"
+MAX_JOBS="${MAX_JOBS:-8}"
 IMAGE="${IMAGE:-ghcr.io/riogesulgon/wan2gp:v1}"
 PUSH="${PUSH:-0}"
 
 # Run from the Wan2GP repo root (this script lives in runpod/).
 cd "$(dirname "$0")/.."
 
-echo "==> Stage 1: deps image (CUDA_ARCHITECTURES=$CUDA_ARCHITECTURES)"
+echo "==> Stage 1: deps image (CUDA_ARCHITECTURES=$CUDA_ARCHITECTURES, MAX_JOBS=$MAX_JOBS)"
 docker build -t wan2gp-deps \
-  --build-arg CUDA_ARCHITECTURES="$CUDA_ARCHITECTURES" -f Dockerfile .
+  --build-arg CUDA_ARCHITECTURES="$CUDA_ARCHITECTURES" \
+  --build-arg MAX_JOBS="$MAX_JOBS" -f Dockerfile .
 
 echo "==> Stage 2: hardened RunPod image (WAN2GP_COMMIT=$WAN2GP_COMMIT)"
 docker build -t wan2gp-runpod \
